@@ -32,6 +32,7 @@
 
 % ── Header / footer ───────────────────────────────────────────────────
 \usepackage{fancyhdr}
+\setlength{\headheight}{14.5pt}
 \pagestyle{fancy}
 \fancyhf{}
 \fancyhead[L]{\small\color{darkgray} Legal RAG System \textendash{} Day 1 Submission}
@@ -80,6 +81,7 @@
 
 % ── Graphics ──────────────────────────────────────────────────────────
 \usepackage{graphicx}
+\usepackage{float}
 
 % ── Lists ─────────────────────────────────────────────────────────────
 \usepackage{enumitem}
@@ -311,15 +313,30 @@ compound over years.
 The solution is a Retrieval-Augmented Generation (RAG) document review system
 specifically configured for Pakistani legal due diligence workflows. The system
 allows a law firm to upload a bundle of legal documents in PDF format through a
-simple web interface. The system indexes these documents using vector embeddings,
-applies a pre-defined review checklist appropriate to the transaction type, and
-automatically generates a structured review memorandum highlighting clause-by-clause
-findings, identified red flags, and missing documents.
+simple web interface. The system indexes these documents using vector embeddings
+and cross-references them against a persistent knowledge base of Pakistani legal
+statutes --- automatically generating a structured review memorandum highlighting
+clause-by-clause findings, identified red flags, and missing documents.
+
+Unlike generic document Q\&A tools, the system maintains a persistent knowledge
+base of Pakistani legal statutes including the Constitution of Pakistan 1973,
+Transfer of Property Act 1882, Registration Act 1908, Stamp Act 1899, Companies
+Act 2017, and LDA/CDA bye-laws. Every query runs against both this statutory
+corpus and the uploaded client documents simultaneously, enabling the system to
+cross-reference findings against specific legislative requirements and produce
+citations that include both the relevant clause in the client document and the
+governing Pakistani statute. Lawyers may also submit free-form queries beyond
+the standard checklist, allowing the system to function as an interactive legal
+research assistant rather than a static review tool.
 
 \begin{successbox}{Key Value Proposition}
 The lawyer's role shifts from spending \textbf{5--7 days} writing a review from
 scratch to spending \textbf{2 hours} reviewing, correcting, and finalising an
 AI-generated first draft. Standard transactions achieve \textbf{same-day delivery}.
+Unlike generic document Q\&A tools, the system knows Pakistani law --- querying
+both the uploaded document bundle and a persistent statutory corpus simultaneously,
+citing specific provisions of the Constitution, Transfer of Property Act, and
+LDA/CDA bye-laws in every finding.
 \end{successbox}
 
 \subsection{System Architecture}
@@ -327,11 +344,135 @@ AI-generated first draft. Standard transactions achieve \textbf{same-day deliver
 The pipeline consists of nine sequential layers, each with a distinct
 responsibility.
 
+\subsection{Dual-Index Architecture --- Core Differentiator}
+
+The system maintains two separate ChromaDB indexes that are queried simultaneously
+on every request via LlamaIndex's \texttt{RouterQueryEngine}.
+
+\begin{table}[H]
+\centering
+\caption{Dual-Index Architecture}
+\renewcommand{\arraystretch}{1.3}
+\begin{tabularx}{\textwidth}{lXl}
+\toprule
+\textbf{Index} & \textbf{Contents} & \textbf{Lifecycle} \\
+\midrule
+Persistent legal corpus
+    & Constitution of Pakistan 1973 (Articles 23, 24, 25, 172),
+      Transfer of Property Act 1882, Registration Act 1908,
+      Stamp Act 1899, Companies Act 2017, Muslim Family Laws
+      Ordinance 1961, Succession Act 1925, West Pakistan Muslim
+      Personal Law (Shariat) Application Act 1962, Benami
+      Transactions (Prohibition) Act 2017, Anti-Money Laundering
+      Act 2010, Income Tax Ordinance 2001 (Sections 236C \& 236K),
+      LDA/CDA/RDA/TMA/SBCA bye-laws, SBP prudential regulations,
+      Pakistani document taxonomy (Fard-e-Malkiat, Intiqal, Registry,
+      Aks Shajra, Jamabandi), city-specific regulatory profiles
+      (Islamabad, Rawalpindi, Lahore, Karachi)
+    & Built once, permanent \\
+Session document index
+    & Lawyer's uploaded PDF bundle for the current transaction
+    & Per upload, 24-hour TTL \\
+\bottomrule
+\end{tabularx}
+\label{tab:dualindex}
+\end{table}
+
+This means every finding cites two sources: the relevant clause in the uploaded
+client document \textbf{and} the governing Pakistani statute. For example, a
+missing LDA NOC is not merely flagged as a missing document --- the system
+identifies the specific LDA bye-law provision being violated and includes the
+statutory citation in the generated memo.
+
+\subsection{Pakistan-Specific Intelligence Layer}
+
+Beyond dual-index retrieval, the system incorporates five layers of
+Pakistan-specific legal intelligence absent from international legal AI tools
+such as Google NotebookLM or Kira Systems:
+
+\begin{enumerate}[leftmargin=1.5cm]
+    \item \textbf{Multilingual document handling:} The embedding model
+    (\texttt{paraphrase-
+    multilingual-MiniLM-L12-v2}) natively supports mixed
+    Urdu-English documents --- the dominant format in Pakistani legal practice.
+    Urdu clauses, property descriptions, and Khasra references are embedded
+    and retrieved with full semantic accuracy.
+
+    \item \textbf{Pakistani document taxonomy:} The system recognises and
+    validates Pakistan-specific document types including Fard-e-Malkiat,
+    Intiqal, Registry, Aks Shajra, and Jamabandi --- automatically identifying
+    which are present in an upload and which are missing from the bundle.
+
+    \item \textbf{City-specific regulatory profiles:} NOC requirements and
+    governing authorities differ by city. The system maintains separate
+    regulatory profiles for Islamabad (CDA), Rawalpindi (RDA/TMA), Lahore
+    (LDA), and Karachi (SBCA), loading the correct statutory references and
+    bye-laws automatically based on the transaction's declared location.
+
+    \item \textbf{Housing society compliance:} For transactions involving
+    DHA, Bahria Town, or other private housing societies, the system loads
+    society-specific transfer documentation requirements and validates
+    compliance accordingly --- covering allocation letters, NOCs, dues
+    clearance certificates, and membership transfer conditions.
+
+    \item \textbf{FBR withholding tax validation:} The system checks
+    compliance with Sections 236C and 236K of the Income Tax Ordinance 2001,
+    verifying tax challan presence, buyer and seller filer status, and the
+    applicable withholding rate (1\% for filers, 2\% for non-filers) for
+    all transactions above PKR~5,000,000.
+
+    \item \textbf{Constitutional article mapping:} Every finding is
+    mapped to its constitutional basis under the 1973 Constitution.
+    A missing NOC cites Article 24 (protection of property rights);
+    a co-owner consent gap cites Article 25 (equality of citizens);
+    an ownerless property indicator cites Article 172 (property
+    vesting in the state). No international legal AI tool reasons
+    at the constitutional level.
+
+    \item \textbf{Muslim inheritance and succession compliance:} The
+    system detects inherited property indicators in uploaded documents
+    (keywords: ``late'', ``deceased'', ``legal heirs of'', ``virasat'',
+    ``succession'') and automatically triggers a supplementary
+    inheritance checklist validating succession certificates, legal
+    heirship certificates, and consent of all heirs under the Muslim
+    Family Laws Ordinance 1961 and the West Pakistan Muslim Personal
+    Law (Shariat) Application Act 1962. Share calculations follow
+    Hanafi fiqh as recognised under Pakistani law.
+
+    \item \textbf{Benami transaction detection:} The system flags
+    potential benami indicators under the Benami Transactions
+    (Prohibition) Act 2017 --- including consideration paid by a
+    third party, price significantly below market value, and
+    undisclosed relationships between buyer and financier. A
+    dedicated Benami Risk Assessment section is generated in the
+    output memo for all flagged transactions.
+
+    \item \textbf{FATF/AML compliance checks:} For transactions above
+    PKR~10,000,000, the system triggers enhanced due diligence
+    requirements under the Anti-Money Laundering Act 2010 and SECP
+    AML/CFT Regulations 2018, verifying source of funds documentation
+    and flagging Suspicious Transaction Report (STR) obligations where
+    applicable.
+\end{enumerate}
+
 \subsubsection{Layer 1 --- User Interface (React + Vite)}
-The lawyer uploads a PDF bundle via drag-and-drop, selects transaction type
-(property / loan / acquisition), and monitors a live progress bar through each
-pipeline stage. On completion, a download button delivers the memo in both Word
-and PDF formats.
+The lawyer uploads a PDF bundle via drag-and-drop and selects transaction type
+(property / loan / acquisition). The interface offers three operating modes via
+a tab selector:
+
+\begin{itemize}[leftmargin=1.5cm]
+    \item \textbf{Auto Checklist:} Runs all 15 standard due diligence questions
+    automatically and generates the full structured memo. Suitable for standard
+    transactions.
+    \item \textbf{Free-Form Q\&A:} The lawyer types any legal question in natural
+    language. The dual-index engine retrieves context from both the uploaded
+    documents and the Pakistani statutory corpus and responds with a cited finding.
+    \item \textbf{Hybrid:} Auto-checklist runs first to generate the base memo,
+    after which a Q\&A panel opens for follow-up queries on specific findings.
+\end{itemize}
+
+A live progress bar monitors each pipeline stage. On completion, a download
+button delivers the memo in both Word and PDF formats.
 
 \subsubsection{Layer 2 --- Backend Orchestration (FastAPI)}
 FastAPI receives uploaded files, assigns a UUID session identifier, manages
@@ -353,19 +494,25 @@ page number, and chunk index. The 50-token overlap ensures legal clause boundari
 are not split across chunks, preserving context for accurate retrieval.
 
 \subsubsection{Layer 5 --- Embedding Generation (HuggingFace)}
-\texttt{sentence-transformers/all-MiniLM-L6-v2} runs locally, producing
-384-dimensional dense vectors. No API cost, no rate limits, no data leaving the
-machine. A 50-page document bundle embeds in under 10 seconds on CPU.
+\texttt{sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2} runs
+locally, producing 384-dimensional dense vectors with native support for
+mixed Urdu-English text --- the dominant format in Pakistani legal documents.
+No API cost, no rate limits, no data leaving the machine. A 50-page document
+bundle embeds in under 10 seconds on CPU.
 
 \subsubsection{Layer 6 --- Vector Storage (ChromaDB)}
 ChromaDB with a persistent local client. One collection per upload session, named
 with the session UUID for isolation. Native LlamaIndex \texttt{ChromaVectorStore}
 integration requires zero adapter code. Production upgrade path: Qdrant.
 
-\subsubsection{Layer 7 --- Query Engine (LlamaIndex VectorIndexRetriever)}
-\texttt{VectorIndexRetriever} with \texttt{similarity\_top\_k=5}. For each of the
-15 checklist questions, the engine runs a semantic search and retrieves the 5
-most relevant chunks, which form the context for the LLM generation call.
+\subsubsection{Layer 7 --- Query Engine (LlamaIndex RouterQueryEngine)}
+\texttt{RouterQueryEngine} wraps two \texttt{VectorIndexRetriever} instances
+(persistent legal corpus + session document index), each with
+\texttt{similarity\_top\_k=5}. For every query --- whether from the automated
+checklist or a free-form lawyer question --- the engine retrieves the 5 most
+relevant chunks from each index and merges the context before passing it to the
+LLM. This dual-retrieval ensures every LLM response is grounded in both the
+uploaded document and the applicable Pakistani statute.
 
 \subsubsection{Layer 8 --- LLM Generation (Claude Sonnet 4.6 / Groq)}
 Retrieved chunks, the checklist question, and a structured system prompt are sent
@@ -381,7 +528,7 @@ $\rightarrow$ transaction summary $\rightarrow$ clause-by-clause findings
 $\rightarrow$ red flags section $\rightarrow$ missing documents checklist
 $\rightarrow$ recommendations.
 
-\begin{figure}[h]
+\begin{figure}[H]
     \centering
     \includegraphics[width=0.62\textwidth]{rag_legal_architecture_flow.png}
     \caption{RAG Legal Document Review System --- Complete Data Flow}
@@ -441,11 +588,14 @@ following reasons:
     other code changes.
 \end{itemize}
 
-\subsubsection{HuggingFace all-MiniLM-L6-v2 (Embeddings)}
+\subsubsection{HuggingFace paraphrase-multilingual-MiniLM-L12-v2 (Embeddings)}
 
-Free, open-source, runs entirely locally. 384-dimensional dense vectors with no
-API dependency, no rate limits, and no data leaving the machine. Sufficient
-dimensionality for legal clause retrieval at the target document scale.
+Free, open-source, runs entirely locally. 384-dimensional dense vectors trained
+on 50+ languages including Urdu, with no API dependency, no rate limits, and no
+data leaving the machine. Selected over the English-only
+\texttt{all-MiniLM-L6-v2} specifically to handle mixed Urdu-English Pakistani
+legal documents --- Urdu property descriptions, Khasra references, and
+vernacular clauses are embedded and retrieved with full semantic accuracy.
 
 \subsubsection{ChromaDB (Vector Store)}
 
@@ -508,7 +658,7 @@ types on Day 3.
 Any finding with \texttt{risk\_level: HIGH} is automatically surfaced in the
 dedicated Red Flags section of the generated memo.
 
-\begin{table}[h]
+\begin{table}[H]
 \centering
 \caption{Red Flag Detection Rules --- Initial Set}
 \renewcommand{\arraystretch}{1.3}
@@ -550,11 +700,15 @@ in the output memo.
   "question_id": 1,
   "question": "Is the title deed present and registered in the vendor's name?",
   "finding": "Title deed (Registry No. 4521/2023) is present and registered in the name of Muhammad Asif Khan, matching vendor CNIC.",
-  "clause_reference": "Document 1, Page 3, Section A",
+  "reasoning": "Document 1 page 3 contains a registered sale deed bearing Registry No. 4521/2023. The vendor name matches the CNIC provided on page 1. Under Section 17 of the Registration Act 1908, immovable property transactions above PKR 100 must be registered. This requirement is constitutionally grounded in Article 23, which guarantees the right to acquire and dispose of property subject to law.",
+  "document_citation": "Uploaded document 1, Page 3, Section A",
+  "statutory_citation": "Registration Act 1908, Section 17(1)(b)",
+  "constitutional_basis": "Article 23 - Right to acquire and dispose of property",
   "page_number": 3,
   "risk_level": "LOW",       # LOW | MEDIUM | HIGH
   "recommendation": "No action required. Verify stamp duty payment receipt.",
-  "missing_documents": []
+  "missing_documents": [],
+  "query_source": "checklist"  # checklist | freeform
 }
 \end{lstlisting}
 
@@ -567,7 +721,7 @@ A standard property due diligence review involves a 50-page document bundle.
 The breakdown below uses Claude Sonnet 4.6 as the production LLM at current
 June 2026 pricing.
 
-\begin{table}[h]
+\begin{table}[H]
 \centering
 \caption{Per-Review API Cost Breakdown --- Claude Sonnet 4.6}
 \renewcommand{\arraystretch}{1.3}
@@ -598,7 +752,7 @@ tier. \textbf{Total API development cost: PKR 0.} Free-tier limits (30 RPM,
 
 \subsection{Monthly SaaS Cost Projections}
 
-\begin{table}[h]
+\begin{table}[H]
 \centering
 \caption{Monthly Operational Cost vs Revenue (Production)}
 \renewcommand{\arraystretch}{1.3}
@@ -637,7 +791,7 @@ Hosting (Railway paid tier)
 
 \subsection{Pricing Model}
 
-\begin{table}[h]
+\begin{table}[H]
 \centering
 \caption{SaaS Pricing Tiers for Pakistani Law Firms}
 \renewcommand{\arraystretch}{1.3}
@@ -719,7 +873,7 @@ demonstration? There is no cost and no commitment involved.''
 
 \subsection{Client Feedback Form (Post-Demo)}
 
-\begin{table}[h]
+\begin{table}[H]
 \centering
 \caption{Day 4 Client Feedback Form Template}
 \renewcommand{\arraystretch}{1.5}

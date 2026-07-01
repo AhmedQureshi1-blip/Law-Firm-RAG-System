@@ -1,0 +1,33 @@
+# Web framework
+fastapi
+uvicorn[standard]
+python-multipart
+
+# LlamaIndex core + integrations
+llama-index-core
+llama-index-vector-stores-chroma
+llama-index-embeddings-huggingface
+llama-index-llms-groq
+
+# Vector store
+chromadb
+
+# Embeddings
+sentence-transformers
+
+# PDF processing
+pdfplumber
+pdf2image
+pytesseract
+Pillow
+
+# Language detection
+langdetect
+
+# Output generation
+python-docx
+reportlab
+
+# Utils
+python-dotenv
+groq
