@@ -59,7 +59,7 @@ def build_dual_engine(session_index, legal_corpus_index):
 
     session_tool = QueryEngineTool.from_defaults(
         query_engine=session_index.as_query_engine(
-            similarity_top_k=5,
+            similarity_top_k=3,
             llm=llm,
         ),
         description=(
@@ -71,7 +71,7 @@ def build_dual_engine(session_index, legal_corpus_index):
 
     corpus_tool = QueryEngineTool.from_defaults(
         query_engine=legal_corpus_index.as_query_engine(
-            similarity_top_k=5,
+            similarity_top_k=3,
             llm=llm,
         ),
         description=(
